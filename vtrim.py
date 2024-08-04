@@ -2,6 +2,7 @@
 
 import getopt
 import sys
+import re
 
 from datetime import datetime
 import signal
@@ -36,6 +37,7 @@ class Configs:
         self.move_file_after_cut = False
         self.log_file_name = None
 
+        self.exts = None
         self.end = -1
         self.__max_hamming_distance = math.ceil(8 * 4 * (1-similarity))
         self.debug("current directory:", os.getcwd())
@@ -103,13 +105,22 @@ class Configs:
             f.write(str(hash))
             f.write("\n")
 
+    def hasValidExtension(self, path):
+        if self.exts == None:
+            return True
+        lower = path.lower()
+        for ext in self.exts:
+            if lower.endswith(ext):
+                return True
+        return False
+
 
 def doCutVideoFiles(cfg: Configs):
     cfg.debug("cut video with configs:")
     cfg.debug(jsonpickle.encode(cfg))
 
     if not os.path.isfile(cfg.db):
-        cfg.error(cfg.db, "is not a file")
+        cfg.error("db file", f"\"{cfg.db}\"", "not found")
         return 1
 
     hashes = loadHashDB(cfg)
@@ -117,17 +128,10 @@ def doCutVideoFiles(cfg: Configs):
     for source in cfg.sources:
         if cfg.isCancelled():
             break
-        if os.path.isdir(source):
-            for filename in os.listdir(source):
-                if cfg.isCancelled():
-                    break
-                path = os.path.join(source, filename)
-                if processVideoFile(cfg, hashes, path):
-                    success += 1
-                else:
-                    fail += 1
-        else:
-            if processVideoFile(cfg, hashes, source):
+        for src in getAllVideoFiles(cfg, source):
+            if cfg.isCancelled():
+                break
+            if processVideoFile(cfg, hashes, src):
                 success += 1
             else:
                 fail += 1
@@ -237,6 +241,21 @@ def appendSampleVideoToHashDB(cfg, db, src, max):
     cfg.info("add", n, "new hashes")
 
 
+def getAllVideoFiles(cfg: Configs, path):
+    r = []
+    if os.path.isfile(path):
+        if cfg.hasValidExtension(path):
+            r.append(path)
+        return r
+
+    for currentpath, folders, files in os.walk(path):
+        for file in files:
+            if cfg.hasValidExtension(file):
+                fullpath = os.path.join(currentpath, file)
+                r.append(fullpath)
+    return r
+
+
 def doAppendHash(cfg):
     cfg.debug("add hash to db with configs:")
     cfg.debug(jsonpickle.encode(cfg))
@@ -252,12 +271,8 @@ def doAppendHash(cfg):
     db = loadHashDB(cfg)
     n = len(db)
     for source in cfg.sources:
-        if os.path.isdir(source):
-            for filename in os.listdir(source):
-                filepath = os.path.join(source, filename)
-                appendSampleVideoToHashDB(cfg, db, filepath, max)
-        else:
-            appendSampleVideoToHashDB(cfg, db, source, max)
+        for src in getAllVideoFiles(cfg, source):
+            appendSampleVideoToHashDB(cfg, db, src, max)
     cfg.info("total new hashes:", len(db) - n)
     writeHashDB(cfg, db)
     return 0
@@ -303,10 +318,11 @@ def printUsageInfo():
     print("Usage:")
     print("trimmer.py -a -d clips.db -i ./video.mp4 -t 30")
     print("trimmer.py -b -d clips.db -i ./samples")
-    print("trimmer.py -c -m -d clips.db -i ./in -o ./out")
+    print("trimmer.py -c -m -d clips.db -i ./in -o ./out -e \"mp4 mkv avi\"")
     print("    -a --add     add to clips database")
     print("    -b --build   build clips database")
     print("    -c --cut     cut video")
+    print("    -e --ext     video file extensions e.g \"mp4 mkv\"")
     print("    -m --move    move video back to source dir after cut")
     print("    -d --db      clips database filename")
     print("    -i --in      sources video file or dir")
@@ -323,11 +339,11 @@ def parseCmdOptions():
         return None
 
     # Options
-    options = "habcmd:l:i:o:t:"
+    options = "habcmd:e:l:i:o:t:"
 
     # Long options
     long_options = ["help", "build", "cut",
-                    "add", "move", "db=", "in=", "out=", "time=", "log="]
+                    "add", "move", "db=", "in=", "out=", "time=", "log=", "ext="]
 
     configs = Configs()
 
@@ -348,6 +364,9 @@ def parseCmdOptions():
             configs.op = Operations.AppendToHashDB
         elif key in ("-d", "--db"):
             configs.db = value
+        elif key in ("-e", "--ext"):
+            configs.exts = set(
+                ["." + x for x in re.split(r' |,|\.', value.lower()) if x])
         elif key in ("-m", "--move"):
             configs.move_file_after_cut = True
         elif key in ("-l", "--log"):
