@@ -31,9 +31,9 @@ class Configs:
         self.max_header_length_ms = 5 * 60 * 1000
 
         self.op = Operations.Error
-        self.db = "clips.db"
-        self.sources = ["in"]
-        self.dest = "out"
+        self.db = os.environ.get('VTRIM_CONFIG_DB', "./clips.db")
+        self.sources = [os.environ.get('VTRIM_CONFIG_SOURCE', "./in/")]
+        self.dest = os.environ.get('VTRIM_CONFIG_DEST', "./out/")
         self.move_file_after_cut = False
         self.log_file_name = None
 
@@ -142,7 +142,7 @@ def doCutVideoFiles(cfg: Configs):
 def findCutPoint(cfg: Configs, heashes, src):
     video = cv2.VideoCapture(src)
     # fps = math.floor(video.get(cv2.CAP_PROP_FPS))
-    count, ms, t = 0, 0, 1000
+    count, ms, t = 0, 0, 0
     while video.isOpened():
         if cfg.isCancelled():
             ms = -1
@@ -257,6 +257,10 @@ def getAllVideoFiles(cfg: Configs, path):
 
 
 def doAppendHash(cfg):
+
+    if not confirmOptions(cfg):
+        return 1
+
     cfg.debug("add hash to db with configs:")
     cfg.debug(jsonpickle.encode(cfg))
 
@@ -314,6 +318,21 @@ def main():
     return 0
 
 
+def confirmOptions(cfg: Configs):
+    print("action  :", cfg.op.name)
+    print(f"db      : \"{cfg.db}\"")
+    srcs = [f"\"{x}\"" for x in cfg.sources if len(x) > 0]
+    print(f"inputs  : [{", ".join(srcs)}]")
+    print(f"output  : \"{cfg.dest}\"")
+    if cfg.op == Operations.CutVideoFile:
+        print("move    :", cfg.move_file_after_cut)
+    if cfg.op == Operations.AppendToHashDB:
+        print("seconds :", f"{cfg.end}")
+    answer = input("run vtrim with the configs above? [y/N]")
+    ok = answer.lower() in ["y", "yes"]
+    return ok
+
+
 def printUsageInfo():
     print("Usage:")
     print("trimmer.py -a -d clips.db -i ./video.mp4 -t 30")
@@ -350,41 +369,53 @@ def parseCmdOptions():
     if "-i" in args or "--in" in args:
         configs.sources = []
 
-    # Parsing argument
-    opts, _ = getopt.getopt(args, options, long_options)
+    try:
 
-    # checking each argument
-    for key, value in opts:
-        # print("arg:", currentArgument, "val:", currentValue)s
-        if key in ("-b", "--build"):
-            configs.op = Operations.BuildHashDB
-        elif key in ("-c", "--cut"):
-            configs.op = Operations.CutVideoFile
-        elif key in ("-a", "--add"):
-            configs.op = Operations.AppendToHashDB
-        elif key in ("-d", "--db"):
-            configs.db = value
-        elif key in ("-e", "--ext"):
-            configs.exts = set(
-                ["." + x for x in re.split(r' |,|\.', value.lower()) if x])
-        elif key in ("-m", "--move"):
-            configs.move_file_after_cut = True
-        elif key in ("-l", "--log"):
-            configs.log_file_name = value
-        elif key in ("-i", "--in"):
-            if not os.path.exists(value):
-                configs.error("path not exists:", value)
-                return None
-            configs.sources.append(value)
-        elif key in ("-o", "--out"):
-            if not os.path.isdir(value):
-                configs.error("dir not exists:", value)
-                return None
-            configs.dest = value
-        elif key in ("-t", "--time"):
-            configs.end = int(value)
-        else:
+        # Parsing argument
+        opts, remains = getopt.getopt(args, options, long_options)
+        if len(remains) > 0:
+            print("Unknow arguments:")
+            for arg in remains:
+                print(arg)
+            print("")
             return None
+
+        # checking each argument
+        for key, value in opts:
+            # print("arg:", currentArgument, "val:", currentValue)s
+            if key in ("-b", "--build"):
+                configs.op = Operations.BuildHashDB
+            elif key in ("-c", "--cut"):
+                configs.op = Operations.CutVideoFile
+            elif key in ("-a", "--add"):
+                configs.op = Operations.AppendToHashDB
+            elif key in ("-d", "--db"):
+                configs.db = value
+            elif key in ("-e", "--ext"):
+                configs.exts = set(
+                    ["." + x for x in re.split(r' |,|\.', value.lower()) if x])
+            elif key in ("-m", "--move"):
+                configs.move_file_after_cut = True
+            elif key in ("-l", "--log"):
+                configs.log_file_name = value
+            elif key in ("-i", "--in"):
+                if not os.path.exists(value):
+                    configs.error("path not exists:", value)
+                    return None
+                configs.sources.append(value)
+            elif key in ("-o", "--out"):
+                if not os.path.isdir(value):
+                    configs.error("dir not exists:", value)
+                    return None
+                configs.dest = value
+            elif key in ("-t", "--time"):
+                configs.end = int(value)
+            else:
+                return None
+    except Exception as e:
+        print("Error:", e)
+        print("")
+        return None
 
     return configs
 

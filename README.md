@@ -1,4 +1,4 @@
-vtrim.py 是一个用于删除视频片头的 python 脚本。
+vtrim.py 是一个用来删除视频片头的 python 脚本。
 
 ### 用法
 
@@ -19,3 +19,6 @@ mkdir out/
 # 其中 --in 参数可以指定多次，或者指定一个文件夹
 ./vtrim.py --cut --db clips.db --in sample.mkv --out out/
 ```
+
+### 进阶用法
+使用环境变量可以少输些参数，详见 [vtrim.sh](./vtrim.sh)
